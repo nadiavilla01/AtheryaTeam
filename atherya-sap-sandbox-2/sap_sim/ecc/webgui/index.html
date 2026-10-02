@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulatore ECC 6.0 · GUI</title>
+<style>
+  :root {
+    --bg: #e9eef3; --panel: #ffffff; --line: #b9c4cf; --line-soft: #d8e0e8; --text: #222b33; --muted: #5d6b78;
+    --title: #1f3d5c; --bar: #f6f8fa; --bar2: #edf1f5; --head: #dfe7ef; --hot: #1a5fae; --sel: #cfe3f7; --sel-line: #7fb0e0;
+    --ok: #2e7d32; --err: #c62828; --warn: #b26a00; --amber: #fff3cd; --amber-line: #e0b84a; --stripe: #f7f9fb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { font: 12.5px/1.35 Arial, "Helvetica Neue", Helvetica, sans-serif; color: var(--text); background: var(--bg);
+         display: flex; flex-direction: column; overflow: hidden; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+
+  .sim-banner { background: var(--amber); border-bottom: 1px solid var(--amber-line); padding: 3px 10px; font-size: 11.5px; color: #6b4e00; display: flex; gap: 12px; }
+  .sim-banner b { font-weight: 700; }
+
+  .menubar { background: var(--bar); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; height: 26px; padding: 0 6px; }
+  .menubar span { padding: 3px 9px; cursor: default; border-radius: 2px; }
+  .menubar span:hover { background: var(--head); }
+  .menubar .sys { margin-left: auto; color: var(--muted); font-size: 11.5px; }
+
+  .systool { background: linear-gradient(#fbfcfd, var(--bar2)); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 4px; padding: 4px 8px; height: 34px; }
+  .okcode { display: flex; align-items: center; border: 1px solid var(--line); background: #fff; height: 22px; }
+  .okcode input { border: 0; outline: 0; width: 170px; padding: 0 6px; height: 20px; text-transform: uppercase; }
+  .ib { width: 26px; height: 24px; border: 1px solid transparent; background: transparent; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .ib:hover { border-color: var(--line); background: #fff; }
+  .ib:disabled { opacity: .35; cursor: default; }
+  .ib svg { width: 16px; height: 16px; }
+  .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+
+  .titlebar { background: var(--panel); padding: 7px 12px 6px; font-size: 15px; font-weight: 700; color: var(--title); border-bottom: 1px solid var(--line-soft); }
+  .apptool { background: var(--bar); border-bottom: 1px solid var(--line-soft); display: flex; align-items: center; gap: 6px; padding: 4px 8px; min-height: 32px; flex-wrap: wrap; }
+  .btn { border: 1px solid var(--line); background: linear-gradient(#ffffff, #eef2f6); padding: 3px 10px; border-radius: 2px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; height: 24px; }
+  .btn:hover { border-color: #8aa2ba; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { border-color: #6d8fb3; }
+  .btn svg { width: 14px; height: 14px; }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+  .screen { flex: 1; overflow: auto; background: var(--panel); padding: 12px 14px 20px; }
+  .dock { width: 270px; border-left: 1px solid var(--line); background: #f9fafb; overflow: auto; padding: 10px 12px; font-size: 12px; }
+  .dock h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--warn); margin: 2px 0 6px; }
+  .dock .clock { font-size: 16px; font-weight: 700; margin-bottom: 2px; font-variant-numeric: tabular-nums; }
+  .dock .shift { color: var(--muted); margin-bottom: 10px; }
+  .dock .row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .dock .kpi { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 8px 0 12px; font-variant-numeric: tabular-nums; }
+  .dock .kpi span:nth-child(odd) { color: var(--muted); }
+  .dock a { color: var(--hot); text-decoration: none; display: block; margin: 3px 0; }
+  .dock a:hover { text-decoration: underline; }
+  .dock .note { color: var(--muted); font-size: 11px; margin-top: 12px; line-height: 1.45; }
+
+  .statusbar { height: 26px; background: linear-gradient(var(--bar2), #e3e9ef); border-top: 1px solid var(--line); display: flex; align-items: center; padding: 0 8px; gap: 10px; }
+  .msg { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .msg .ic { width: 14px; height: 14px; border-radius: 2px; flex: none; }
+  .msg.S .ic { background: var(--ok); } .msg.E .ic { background: var(--err); border-radius: 50%; } .msg.W .ic { background: #e3a21a; }
+  .msg.E { color: var(--err); }
+  .sysinfo { color: var(--muted); font-size: 11.5px; border-left: 1px solid var(--line); padding-left: 10px; white-space: nowrap; }
+
+  /* Easy Access */
+  .tree { font-size: 12.5px; }
+  .tree details { margin-left: 16px; }
+  .tree > details { margin-left: 0; }
+  .tree summary { cursor: pointer; padding: 2px 0; list-style: none; display: flex; gap: 6px; align-items: center; }
+  .tree summary::before { content: "▸"; color: var(--muted); width: 10px; }
+  .tree details[open] > summary::before { content: "▾"; }
+  .tree .leaf { margin-left: 32px; padding: 2px 0; cursor: pointer; display: flex; gap: 8px; }
+  .tree .leaf:hover .t { text-decoration: underline; color: var(--hot); }
+  .tree .leaf .c { color: var(--muted); width: 52px; font-family: "Courier New", monospace; font-size: 12px; }
+  .folder { width: 14px; height: 11px; background: #e8c45a; border: 1px solid #b8922a; border-radius: 1px; display: inline-block; }
+  .welcome { color: var(--muted); margin: 0 0 14px; max-width: 760px; }
+
+  /* gruppi e campi */
+  .group { border: 1px solid var(--line-soft); border-radius: 2px; margin: 0 0 12px; max-width: 980px; }
+  .group > .gt { background: var(--bar2); border-bottom: 1px solid var(--line-soft); padding: 4px 8px; font-weight: 700; color: var(--title); font-size: 12px; }
+  .group > .gb { padding: 8px 10px; display: grid; grid-template-columns: 190px 1fr; gap: 5px 12px; align-items: center; }
+  .group > .gb.two { grid-template-columns: 170px 1fr 170px 1fr; }
+  .lbl { color: var(--muted); }
+  .val { border: 1px solid var(--line-soft); background: #f6f8fa; min-height: 20px; padding: 1px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inp { border: 1px solid var(--line); background: #fff; height: 22px; padding: 0 5px; max-width: 320px; width: 100%; }
+  textarea.inp { height: 90px; padding: 4px 5px; resize: vertical; max-width: 640px; }
+  .lock { background: #fdecea; border: 1px solid #f1b0ab; color: var(--err); padding: 6px 10px; margin-bottom: 12px; max-width: 980px; }
+  .longtext { white-space: pre-wrap; border: 1px solid var(--line-soft); background: #fbfcfd; padding: 8px 10px; max-width: 980px; font-family: "Courier New", monospace; font-size: 12px; }
+
+  /* schede */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 6px 0 0; }
+  .tab { border: 1px solid var(--line); border-bottom: 0; background: var(--bar2); padding: 4px 12px; cursor: pointer; border-radius: 3px 3px 0 0; position: relative; top: 1px; }
+  .tab.on { background: #fff; font-weight: 700; color: var(--title); }
+  .tabbody { border: 1px solid var(--line); border-top: 0; padding: 8px; background: #fff; }
+
+  /* ALV */
+  .alvbar { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+  .alvbar .count { color: var(--muted); }
+  .alvbar input { border: 1px solid var(--line); height: 22px; padding: 0 6px; width: 220px; }
+  .alvwrap { border: 1px solid var(--line); overflow: auto; max-height: calc(100vh - 290px); }
+  table.alv { border-collapse: collapse; width: max-content; min-width: 100%; }
+  .alv th { position: sticky; top: 0; background: var(--head); border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+            padding: 4px 7px; text-align: left; font-weight: 700; white-space: pre; cursor: pointer; user-select: none; font-size: 12px; z-index: 1; }
+  .alv th.num { text-align: right; }
+  .alv th .s { color: var(--hot); margin-left: 4px; }
+  .alv td { border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); padding: 2px 7px; white-space: nowrap; max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
+  .alv tr:nth-child(even) td { background: var(--stripe); }
+  .alv tr.sel td { background: var(--sel); }
+  .alv td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .alv td.key { color: var(--hot); text-decoration: underline; cursor: pointer; }
+  .alv td.neg { color: var(--err); font-weight: 700; }
+  .alv .ath { color: #0b5cad; font-weight: 700; }
+  .empty { color: var(--muted); padding: 14px; }
+
+  .dialog-bg { position: fixed; inset: 0; background: rgba(20, 30, 40, .25); display: flex; align-items: center; justify-content: center; z-index: 10; }
+  .dialog { background: #fff; border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.2); min-width: 360px; }
+  .dialog .dt { background: var(--title); color: #fff; padding: 6px 10px; font-weight: 700; }
+  .dialog .db { padding: 12px; display: grid; gap: 8px; }
+  .dialog .df { padding: 8px 12px; display: flex; justify-content: flex-end; gap: 6px; background: var(--bar); border-top: 1px solid var(--line-soft); }
+</style>
+</head>
+<body>
+<div class="sim-banner"><b>Simulazione</b><span>Interfaccia in stile SAP GUI su un sistema ECC 6.0 simulato · non è un prodotto SAP · in produzione sul sistema del cliente</span></div>
+<div class="menubar">
+  <span data-tc="SMEN">Menu</span><span>Modifica</span><span>Preferiti</span><span>Extra</span><span data-tc="SM04">Sistema</span><span>Guida</span>
+  <span class="sys" id="sysline">ECD · mandante 100 · utente PLANNER</span>
+</div>
+<div class="systool">
+  <div class="okcode"><input id="ok" placeholder="" autocomplete="off" spellcheck="false" title="Campo comandi: codice transazione, /n per uscire"></div>
+  <button class="ib" id="okgo" title="Invio"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#2e7d32"/><path d="M4.5 8.2l2.3 2.3 4.7-4.9" stroke="#fff" stroke-width="1.8" fill="none"/></svg></button>
+  <div class="sep"></div>
+  <button class="ib" id="save" title="Salvare (Ctrl+S)" disabled><svg viewBox="0 0 16 16"><rect x="2" y="2" width="12" height="12" rx="1" fill="#3d6fa6"/><rect x="4.5" y="2" width="7" height="4.5" fill="#dfe9f5"/><rect x="4" y="9" width="8" height="4" fill="#fff"/></svg></button>
+  <div class="sep"></div>
+  <button class="ib" id="back" title="Indietro (F3)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#2e7d32"/><path d="M9.5 4.5L6 8l3.5 3.5" stroke="#fff" stroke-width="2" fill="none"/></svg></button>
+  <button class="ib" id="exit" title="Terminare (Maiusc+F3)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#e3a21a"/><path d="M5 8h6" stroke="#fff" stroke-width="2.2"/></svg></button>
+  <button class="ib" id="cancel" title="Interrompere (F12)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#c62828"/><path d="M5.3 5.3l5.4 5.4M10.7 5.3l-5.4 5.4" stroke="#fff" stroke-width="1.9"/></svg></button>
+  <div class="sep"></div>
+  <button class="ib" id="refresh" title="Aggiornare"><svg viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6" stroke="#3d6fa6" stroke-width="2" fill="none"/><path d="M12.5 1.5v3.6H9" stroke="#3d6fa6" stroke-width="2" fill="none"/></svg></button>
+</div>
+<div class="titlebar" id="title">SAP Easy Access</div>
+<div class="apptool" id="apptool"></div>
+<div class="main">
+  <div class="screen" id="screen"></div>
+  <aside class="dock" id="dock">
+    <h3>Simulazione · non è in SAP</h3>
+    <div class="clock" id="clock">–</div>
+    <div class="shift" id="shift"></div>
+    <div class="row">
+      <button class="btn" data-adv="60">+1 ora</button>
+      <button class="btn" data-adv="1440">+1 giorno</button>
+      <button class="btn" data-adv="10080">+1 settimana</button>
+    </div>
+    <div class="row">
+      <button class="btn" id="run">Avvia tempo</button>
+      <button class="btn" id="reset">Ricomincia</button>
+    </div>
+    <div class="kpi" id="kpi"></div>
+    <a href="/fiori/#" target="_blank">Le stesse fabbrica e dati in stile Fiori (S/4HANA) ↗</a>
+    <a href="/fiori/api/data/machines" target="_blank">Stato reale delle presse (usura nascosta) ↗</a>
+    <a href="/fiori/api/data/events?top=200" target="_blank">Cronaca della fabbrica ↗</a>
+    <div class="note">La GUI non si aggiorna da sola, come quella vera: dopo aver fatto passare il tempo, premere Aggiornare o Invio.
+      Le azioni girano come utente PLANNER attraverso le stesse BAPI che usa Atherya.</div>
+  </aside>
+</div>
+<div class="statusbar"><div class="msg" id="msg"><span class="ic" style="display:none"></span><span id="msgtext"></span></div>
+  <div class="sysinfo" id="sysinfo">ECD (1) 100 · eccsim · INS</div></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let CATALOG = [], BY = {}, stack = [], cur = null;
+
+// ---------------------------------------------------------------- utilità
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fdate = (v) => { v = String(v || ""); return v.length === 8 && v !== "00000000" ? `${v.slice(6)}.${v.slice(4, 6)}.${v.slice(0, 4)}` : ""; };
+const ftime = (v) => { v = String(v || ""); return v.length === 6 ? `${v.slice(0, 2)}:${v.slice(2, 4)}:${v.slice(4)}` : ""; };
+const fnum = (v) => (v === "" || v === null || v === undefined) ? "" : Number(v).toLocaleString("it-IT", { maximumFractionDigits: 3 });
+// Come la GUI vera: le chiavi si vedono senza zeri (conversione ALPHA in uscita); RFC e tabelle le hanno con gli zeri.
+const ext = (v) => (/^0\d{7,}$/.test(String(v ?? "")) ? String(v).replace(/^0+/, "") || "0" : (v ?? ""));
+let RAW = false;  // SE16N mostra il formato interno, come il contenuto della tabella
+function fmt(kind, v) {
+  if (kind === "K" || (kind === "C" && !RAW)) return ext(v);
+  if (kind === "D") return fdate(v);
+  if (kind === "T") return ftime(v);
+  if (kind === "P") return fnum(v);
+  if (kind === "%") return v === "" ? "" : `${v} %`;
+  return v ?? "";
+}
+async function post(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  return r.json();
+}
+function message(type, text) {
+  const m = $("msg");
+  m.className = "msg " + (type || "");
+  m.querySelector(".ic").style.display = text ? "" : "none";
+  $("msgtext").textContent = text || "";
+}
+function icon(name) {
+  const p = {
+    exec: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="#fff" stroke="#3d6fa6" stroke-width="1.5"/><path d="M8 4v4l3 2" stroke="#3d6fa6" stroke-width="1.6" fill="none"/></svg>',
+    act: '<svg viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4" stroke="#3d6fa6" stroke-width="1.8" fill="none"/></svg>',
+  };
+  return p[name] || "";
+}
+
+// ---------------------------------------------------------------- navigazione
+function toolbar(items) {
+  const t = $("apptool");
+  t.innerHTML = "";
+  items.forEach((it) => {
+    const b = document.createElement("button");
+    b.className = "btn" + (it.primary ? " primary" : "");
+    b.innerHTML = (it.icon ? icon(it.icon) : "") + esc(it.label);
+    b.disabled = it.enabled === false;
+    b.onclick = it.onClick;
+    t.appendChild(b);
+  });
+}
+function go(tcode, sel, push = true) {
+  tcode = String(tcode || "").trim().toUpperCase();
+  if (!tcode) return;
+  if (tcode.startsWith("/N") || tcode.startsWith("/O")) tcode = tcode.slice(2);
+  if (tcode === "" || tcode === "SMEN" || tcode === "/N") { if (push) stack = []; return home(); }
+  const alias = { IW22: "IW23", IW32: "IW33", CO02: "CO03", IW29: "IW28", IW39: "IW38", CO40: "MD16", LT12: "LT23", SE16: "SE16N", SM50: "SM04" };
+  const t = alias[tcode] || tcode;
+  const tx = BY[t];
+  if (!tx) { message("E", `La transazione ${tcode} non esiste`); return; }
+  if (push && cur) stack.push(cur);
+  $("ok").value = "";
+  message("", "");
+  if (tx.kind === "form") return form(tx);
+  if (sel) return run(tx, sel);
+  if (tx.kind === "detail" || (tx.sel && tx.sel.length)) return selection(tx);
+  return run(tx, {});
+}
+function back() {
+  const prev = stack.pop();
+  if (!prev) return home();
+  cur = null;
+  prev.again();
+}
+
+// ---------------------------------------------------------------- SAP Easy Access
+function home() {
+  cur = { again: home };
+  $("title").textContent = "SAP Easy Access";
+  toolbar([]);
+  $("save").disabled = true;
+  const areas = { Manutenzione: "Logistica › Manutenzione impianti", Produzione: "Logistica › Produzione", Magazzino: "Logistica › Gestione materiali e magazzino", Sistema: "Strumenti" };
+  let html = `<p class="welcome">Sistema ECC 6.0 simulato sulla stessa fabbrica delle API S/4HANA. Si entra con un codice transazione nel campo comandi
+    (per esempio <b>IW38</b>, <b>COOIS</b>, <b>MD04</b>, <b>SE16N</b>) oppure dal menu. Doppio clic per aprire.</p><div class="tree"><details open><summary><span class="folder"></span> Menu SAP</summary>`;
+  Object.keys(areas).forEach((a) => {
+    html += `<details open><summary><span class="folder"></span> ${esc(areas[a])}</summary>`;
+    CATALOG.filter((t) => t.area === a).forEach((t) => {
+      html += `<div class="leaf" data-tc="${t.tcode}"><span class="c">${t.tcode}</span><span class="t">${esc(t.title)}</span></div>`;
+    });
+    html += `</details>`;
+  });
+  html += `</details></div>`;
+  $("screen").innerHTML = html;
+  $("screen").querySelectorAll(".leaf").forEach((el) => { el.ondblclick = () => go(el.dataset.tc); el.onclick = () => { $("ok").value = el.dataset.tc; }; });
+}
+
+// ---------------------------------------------------------------- schermata di selezione
+function selection(tx, prefill) {
+  cur = { again: () => selection(tx, prefill) };
+  $("title").textContent = tx.title;
+  $("save").disabled = true;
+  const fields = tx.kind === "detail" ? [{ name: "KEY", label: tx.keylabel }] : tx.sel;
+  let html = `<div class="group"><div class="gt">Criteri di selezione</div><div class="gb">`;
+  fields.forEach((f) => {
+    const v = (prefill && prefill[f.name]) ?? f.default ?? "";
+    html += `<label class="lbl" for="f_${f.name}">${esc(f.label)}</label>`;
+    if (f.type === "check") html += `<div><input type="checkbox" id="f_${f.name}" ${v === "X" ? "checked" : ""}></div>`;
+    else if (f.choices) html += `<select class="inp" id="f_${f.name}">${f.choices.map((c) => `<option ${c === v ? "selected" : ""}>${esc(c)}</option>`).join("")}</select>`;
+    else html += `<input class="inp" id="f_${f.name}" value="${esc(v)}" autocomplete="off">`;
+  });
+  html += `</div></div>`;
+  $("screen").innerHTML = html;
+  const read = () => {
+    const sel = {};
+    fields.forEach((f) => { const el = $("f_" + f.name); sel[f.name] = f.type === "check" ? (el.checked ? "X" : "") : el.value.trim(); });
+    return sel;
+  };
+  const exec = () => run(tx, read());
+  toolbar([{ label: "Eseguire (F8)", icon: "exec", primary: true, onClick: exec }]);
+  cur.exec = exec;
+  const first = $("f_" + fields[0].name);
+  if (first && first.tagName === "INPUT") first.focus();
+  $("screen").querySelectorAll("input.inp").forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") exec(); }));
+}
+
+// ---------------------------------------------------------------- esecuzione
+async function run(tx, sel) {
+  const res = await post("/sim/ecc/gui/run", { tcode: tx.tcode, sel });
+  if (res.error) { message("E", res.error.text); if (!cur || cur.again === home) selection(tx, sel); return; }
+  const out = res.result;
+  if (out.kind === "detail") return detail(tx, sel, out);
+  return alv(tx, sel, out);
+}
+
+function alv(tx, sel, out) {
+  cur = { again: () => run(tx, sel), refresh: () => run(tx, sel), exec: () => run(tx, sel) };
+  $("title").textContent = out.title + (out.title_suffix ? ` · ${out.title_suffix}` : "");
+  $("save").disabled = true;
+  RAW = out.tcode === "SE16N";
+  let rows = out.rows.slice(), sortBy = null, desc = false, filter = "", selected = null;
+  const cols = out.columns;
+  const actions = (out.actions || []).map((a) => ({ label: a.label, icon: "act", onClick: () => doRowAction(a) }));
+  const items = [{ label: "Aggiornare", onClick: () => run(tx, sel) }].concat(actions);
+  if (tx.sel && tx.sel.length) items.unshift({ label: "Selezione", onClick: () => selection(tx, sel) });
+  toolbar(items);
+
+  async function doRowAction(a) {
+    if (!selected) { message("W", "Selezionare una riga"); return; }
+    const r = await post("/sim/ecc/gui/action", { action: a.id, key: selected._key });
+    message(r.message.type, r.message.text);
+    if (r.message.type === "S") run(tx, sel);
+  }
+  function draw() {
+    const f = filter.toLowerCase();
+    let view = f ? rows.filter((r) => cols.some((c) => String(fmt(c.kind, r[c.field])).toLowerCase().includes(f))) : rows;
+    if (sortBy) {
+      const c = cols.find((x) => x.field === sortBy);
+      view = view.slice().sort((a, b) => {
+        let x = a[sortBy], y = b[sortBy];
+        if (c.kind === "P" || c.kind === "%") { x = Number(x) || 0; y = Number(y) || 0; }
+        return (x > y ? 1 : x < y ? -1 : 0) * (desc ? -1 : 1);
+      });
+    }
+    let html = `<div class="alvbar"><span class="count">${view.length} ${view.length === 1 ? "voce" : "voci"}${view.length !== rows.length ? ` su ${rows.length}` : ""}</span>
+      <input id="flt" placeholder="Filtrare…" value="${esc(filter)}"></div>`;
+    if (!view.length) { html += `<div class="alvwrap"><div class="empty">Nessun valore trovato</div></div>`; }
+    else {
+      html += `<div class="alvwrap"><table class="alv"><thead><tr>${cols.map((c) =>
+        `<th data-f="${c.field}" class="${c.kind === "P" || c.kind === "%" ? "num" : ""}">${esc(c.text)}${sortBy === c.field ? `<span class="s">${desc ? "▼" : "▲"}</span>` : ""}</th>`).join("")}</tr></thead><tbody>`;
+      view.slice(0, 1500).forEach((r, i) => {
+        html += `<tr data-i="${rows.indexOf(r)}" class="${selected === r ? "sel" : ""}">` + cols.map((c) => {
+          const v = fmt(c.kind, r[c.field]);
+          const cls = [c.kind === "P" || c.kind === "%" ? "num" : "", c.field === cols[0].field && out.drill && v ? "key" : "",
+                       c.field === "AVAIL_QTY" && Number(r[c.field]) < 0 ? "neg" : ""].join(" ");
+          const inner = /ATHERYA/.test(String(v)) ? `<span class="ath">${esc(v)}</span>` : esc(v);
+          return `<td class="${cls}" title="${esc(v)}">${inner}</td>`;
+        }).join("") + `</tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    $("screen").innerHTML = html;
+    const flt = $("flt");
+    flt.oninput = () => { filter = flt.value; const pos = flt.selectionStart; draw(); $("flt").focus(); $("flt").setSelectionRange(pos, pos); };
+    $("screen").querySelectorAll("th").forEach((th) => th.onclick = () => { if (sortBy === th.dataset.f) desc = !desc; else { sortBy = th.dataset.f; desc = false; } draw(); });
+    $("screen").querySelectorAll("tbody tr").forEach((tr) => {
+      const r = rows[Number(tr.dataset.i)];
+      tr.onclick = () => { selected = r; $("screen").querySelectorAll("tr.sel").forEach((x) => x.classList.remove("sel")); tr.classList.add("sel"); };
+      tr.ondblclick = () => { if (out.drill) go(out.drill, { KEY: r._key }); };
+    });
+    $("screen").querySelectorAll("td.key").forEach((td) => td.onclick = (e) => {
+      const r = rows[Number(td.parentElement.dataset.i)];
+      e.stopPropagation();
+      if (out.drill) go(out.drill, { KEY: r._key });
+    });
+  }
+  draw();
+}
+
+function group(title, fields, two) {
+  let html = `<div class="group"><div class="gt">${esc(title)}</div><div class="gb ${two ? "two" : ""}">`;
+  fields.forEach(([l, v]) => { v = String(v ?? "").length >= 8 ? ext(v) : v; html += `<span class="lbl">${esc(l)}</span><span class="val" title="${esc(v)}">${esc(v)}</span>`; });
+  return html + `</div></div>`;
+}
+
+function detail(tx, sel, out) {
+  cur = { again: () => run(tx, sel), refresh: () => run(tx, sel) };
+  $("title").textContent = out.title;
+  $("save").disabled = true;
+  let html = out.lock ? `<div class="lock">${esc(out.lock)}: le modifiche saranno rifiutate finché il blocco non viene rilasciato (SM12).</div>` : "";
+  out.sections.forEach((s) => { html += group(s.title, s.fields, s.fields.length > 4); });
+  if (out.text) html += `<div class="group"><div class="gt">Testo esteso</div><div class="gb" style="display:block"><div class="longtext">${esc(out.text)}</div></div></div>`;
+  if (out.tabs && out.tabs.length) {
+    html += `<div class="tabs">${out.tabs.map((t, i) => `<div class="tab ${i === 0 ? "on" : ""}" data-i="${i}">${esc(t.title)} (${t.rows.length})</div>`).join("")}</div><div class="tabbody" id="tabbody"></div>`;
+  }
+  $("screen").innerHTML = html;
+  const showTab = (i) => {
+    const t = out.tabs[i];
+    $("screen").querySelectorAll(".tab").forEach((el) => el.classList.toggle("on", Number(el.dataset.i) === i));
+    $("tabbody").innerHTML = t.rows.length ? `<div class="alvwrap" style="max-height:none"><table class="alv"><thead><tr>${t.columns.map((c) => `<th class="${c.kind === "P" ? "num" : ""}">${esc(c.text)}</th>`).join("")}</tr></thead><tbody>${
+      t.rows.map((r) => `<tr>${t.columns.map((c) => `<td class="${c.kind === "P" ? "num" : ""}">${esc(c.kind === "P" ? fmt("P", r[c.field]) : ext(fmt(c.kind, r[c.field])))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : `<div class="empty">Nessuna voce</div>`;
+  };
+  if (out.tabs && out.tabs.length) {
+    $("screen").querySelectorAll(".tab").forEach((el) => el.onclick = () => showTab(Number(el.dataset.i)));
+    showTab(0);
+  }
+  toolbar([{ label: "Aggiornare", onClick: () => run(tx, sel) }].concat((out.actions || []).map((a) => ({
+    label: a.label, icon: "act", enabled: a.enabled, onClick: () => detailAction(a, out, tx, sel),
+  }))));
+}
+
+async function detailAction(a, out, tx, sel) {
+  let values = {};
+  if (a.choices) {
+    const v = await choose(a.label, "Nuovo centro di lavoro (presse idonee per lo stampo)", a.choices, a.current);
+    if (v === null) return;
+    values = { ARBPL: v };
+  }
+  const r = await post("/sim/ecc/gui/action", { action: a.id, key: out.key, values });
+  message(r.message.type, r.message.text);
+  if (r.message.type === "S") run(tx, sel);
+}
+
+function choose(title, label, choices, current) {
+  return new Promise((resolve) => {
+    const bg = document.createElement("div");
+    bg.className = "dialog-bg";
+    bg.innerHTML = `<div class="dialog"><div class="dt">${esc(title)}</div><div class="db"><span class="lbl">${esc(label)}</span>
+      <select class="inp" id="dlgsel">${choices.map((c) => `<option ${c === current ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+      <div class="df"><button class="btn primary" id="dlgok">Continuare</button><button class="btn" id="dlgno">Interrompere</button></div></div>`;
+    document.body.appendChild(bg);
+    const close = (v) => { bg.remove(); resolve(v); };
+    $("dlgok").onclick = () => close($("dlgsel").value);
+    $("dlgno").onclick = () => close(null);
+  });
+}
+
+// ---------------------------------------------------------------- IW21 (creazione)
+function form(tx) {
+  cur = { again: () => form(tx) };
+  $("title").textContent = tx.title;
+  let html = `<div class="group"><div class="gt">Avviso</div><div class="gb">`;
+  tx.fields.forEach((f) => {
+    html += `<label class="lbl" for="f_${f.name}">${esc(f.label)}</label>`;
+    if (f.type === "check") html += `<div><input type="checkbox" id="f_${f.name}"></div>`;
+    else if (f.type === "text") html += `<textarea class="inp" id="f_${f.name}"></textarea>`;
+    else if (f.choices) html += `<select class="inp" id="f_${f.name}">${f.choices.map((c) => `<option ${c === f.default ? "selected" : ""}>${c}</option>`).join("")}</select>`;
+    else html += `<input class="inp" id="f_${f.name}" value="${esc(f.default || "")}" autocomplete="off">`;
+  });
+  html += `</div></div>`;
+  $("screen").innerHTML = html;
+  const save = async () => {
+    const values = {};
+    tx.fields.forEach((f) => { const el = $("f_" + f.name); values[f.name] = f.type === "check" ? (el.checked ? "X" : "") : el.value; });
+    const r = await post("/sim/ecc/gui/action", { action: tx.tcode, values });
+    message(r.message.type, r.message.text);
+    if (r.message.type === "S") { $("f_QMTXT").value = ""; $("f_LTXT").value = ""; }
+  };
+  $("save").disabled = false;
+  cur.save = save;
+  toolbar([{ label: "Salvare", primary: true, onClick: save }]);
+  $("f_QMTXT").focus();
+}
+
+// ---------------------------------------------------------------- simulazione (pannello laterale)
+async function clock() {
+  const c = await (await fetch("/sim/clock")).json();
+  const d = new Date(c.now);
+  $("clock").textContent = `${c.weekday} ${d.toLocaleDateString("it-IT")} ${d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
+  $("shift").textContent = c.shift;
+  $("run").textContent = c.running ? "Fermare il tempo" : "Avvia tempo";
+  const k = c.kpi || {};
+  $("kpi").innerHTML = [["Pezzi buoni", k.produced], ["Scarti", k.scrap], ["Spediti", k.shipped], ["Guasti", k.breakdowns],
+    ["Fermo macchina (min)", k.downtime_min]].map(([l, v]) => `<span>${l}</span><span>${fnum(v || 0)}</span>`).join("");
+  $("sysinfo").textContent = `ECD (1) 100 · eccsim · ${d.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
+  return c;
+}
+document.querySelectorAll("[data-adv]").forEach((b) => b.onclick = async () => {
+  await post("/sim/advance", { minutes: Number(b.dataset.adv) });
+  await clock();
+  message("S", "Tempo di fabbrica avanzato: premere Aggiornare per rileggere i dati");
+});
+$("run").onclick = async () => { const c = await clock(); await post(c.running ? "/sim/stop" : "/sim/run", { seconds_per_step: 1 }); clock(); };
+$("reset").onclick = async () => {
+  if (!confirm("La fabbrica torna a giovedì 1 ottobre 2026, ore 06:00. Tutti i documenti creati vanno persi.")) return;
+  await post("/sim/reset"); stack = []; home(); clock(); message("S", "Simulazione ricominciata");
+};
+
+// ---------------------------------------------------------------- tastiera e barra di sistema
+$("ok").addEventListener("keydown", (e) => { if (e.key === "Enter") go($("ok").value); });
+$("okgo").onclick = () => { if ($("ok").value) go($("ok").value); else if (cur && cur.refresh) cur.refresh(); };
+$("back").onclick = back;
+$("exit").onclick = () => { stack = []; home(); };
+$("cancel").onclick = back;
+$("refresh").onclick = () => { if (cur && cur.refresh) cur.refresh(); clock(); };
+$("save").onclick = () => cur && cur.save && cur.save();
+document.querySelectorAll(".menubar [data-tc]").forEach((el) => el.onclick = () => go(el.dataset.tc));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F8" && cur && cur.exec) { e.preventDefault(); cur.exec(); }
+  if (e.key === "F3") { e.preventDefault(); back(); }
+  if (e.key === "F12") { e.preventDefault(); back(); }
+  if (e.key === "s" && (e.ctrlKey || e.metaKey) && cur && cur.save) { e.preventDefault(); cur.save(); }
+});
+
+(async () => {
+  CATALOG = await (await fetch("/sim/ecc/gui/catalog")).json();
+  CATALOG.forEach((t) => { BY[t.tcode] = t; });
+  home();
+  clock();
+  setInterval(clock, 3000);
+  const start = new URLSearchParams(location.search).get("~transaction");
+  if (start) go(start);
+})();
+</script>
+</body>
+</html>
