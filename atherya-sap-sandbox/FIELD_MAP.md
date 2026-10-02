@@ -61,3 +61,44 @@ Codici restituiti in `error.code`: `IW/001–031`, `IW/REL`, `IW/DEL` (manutenzi
 `M3/305`, `M3/351` (materiali); `M7/001`, `M7/021`, `M7/062` (prenotazioni e disponibilità);
 `ME/083`, `ME/120` (RdA); `IR/001` (misure); `/SCWM/L3/012`, `/SCWM/L3/101`, `/SCWM/PI/010` (magazzino);
 `/IWFND/...` e `/IWBEP/...` per autenticazione, CSRF, permessi, risorse e precondizioni.
+
+---
+
+# Facciata ECC 6.0: nomi da verificare
+
+Stessa regola: i nomi vengono dalla documentazione, non da un sistema. Prima del primo cliente ECC,
+verificare ogni modulo in SE37 (interfaccia, abilitazione RFC, tipo di RETURN) e ogni tabella in SE11.
+Il connettore li isola in `atherya_sap/ecc.py`.
+
+## Moduli funzione
+
+| Modulo | Affidabilità | Da verificare |
+|---|---|---|
+| `BAPI_TRANSACTION_COMMIT` / `_ROLLBACK`, `RFC_READ_TABLE`, `RFC_PING`, `RFC_SYSTEM_INFO`, `DDIF_FIELDINFO_GET` | alta | `RFC_READ_TABLE` spesso vietato o sostituito da `/BODS/RFC_READ_TABLE2` o moduli Z |
+| `BAPI_ALM_NOTIF_CREATE` / `_SAVE` / `_GET_DETAIL` / `_CLOSE` | alta | campi di `NOTIFHEADER` (`BREAKDOWN`, `STRMLFNDATE`), presenza di `EXTENSIONIN` nella release, se `_CLOSE` richiede `_SAVE` |
+| `BAPI_ALM_ORDER_MAINTAIN` | alta (nome), media (dettagli) | formato di `OBJECTKEY` per operazioni e componenti, metodi `LOCK`/`UNLOCK` disponibili, struttura di `ET_NUMBERS` |
+| `BAPI_ALM_ORDER_GET_DETAIL`, `BAPI_ALM_CONF_CREATE` | alta | nomi dei campi di `ES_HEADER` (`SYS_STATUS`) |
+| `BAPI_ALM_ORDERHEAD_GET_LIST` | media | nomi esatti dei `FIELD_NAME` in `IT_RANGES` |
+| `MEASUREM_DOCUM_RFC_SINGLE_001` | media | nomi dei parametri ed eccezioni; spesso si usa una BAPI di misura o un wrapper Z |
+| `BAPI_PRODORD_GET_DETAIL`, `BAPI_PRODORD_RELEASE`, `BAPI_PRODORDCONF_CREATE_TT` | alta | nomi dei campi in `HEADER`/`OPERATION`/`COMPONENT` |
+| `BAPI_PRODORD_CREATE_FROM_PLORD` | media | disponibilità nella release |
+| `BAPI_MATERIAL_STOCK_REQ_LIST`, `BAPI_MATERIAL_AVAILABILITY` | media | campi di `MRP_ITEMS` e indicatori elemento MRP |
+| `BAPI_GOODSMVT_CREATE`, `BAPI_RESERVATION_CREATE1`, `BAPI_PR_CREATE` | alta | `GM_CODE` corretti per ogni movimento; nei magazzini gestiti WM il 261/201 genera fabbisogni di trasferimento |
+| `BAPI_RESERVATION_DELETE`, `BAPI_REQUISITION_DELETE` | media | in alternativa `BAPI_RESERVATION_CHANGE` e `BAPI_PR_CHANGE` con indicatore di cancellazione |
+| `L_TO_CREATE_SINGLE`, `L_TO_CONFIRM` | media | abilitazione RFC nella release; spesso servono wrapper |
+| `Z_ATHERYA_PRODORD_OPR_CHANGE` | **non esiste**: è uno sviluppo da fare | interfaccia proposta in CONNECT_ECC.md §6 |
+
+## Semplificazioni della sandbox ECC
+
+| Cosa | Nella sandbox | Nel sistema vero |
+|---|---|---|
+| Visibilità prima del commit | le modifiche non confermate sono già visibili agli utenti simulati | restano nel buffer di aggiornamento fino al commit |
+| Rollback | ripristina le righe toccate; i numeri consumati non tornano (come in SAP) | idem |
+| Blocchi | un oggetto per ordine/avviso/prenotazione/RdA, rilasciati al commit | oggetti enqueue specifici (`ESORDER`, `EIQMEL`, …) |
+| Stati | codici `I0001…` su `JEST` calcolati dallo stato del mondo | stati attivi/inattivi con storico (`JCDS`) |
+| Compensazioni | avviso chiuso, ordine bloccato (LKD) | contrassegno di cancellazione (`DLFL`) di solito solo da transazione o con sviluppo Z |
+| Movimenti merci con WM | scalano direttamente i quanti | fabbisogno di trasferimento → ordine di trasferimento |
+| Testi lunghi | memorizzati in chiaro sull'avviso | `STXH`/`STXL`, leggibili via RFC solo da BAPI o moduli Z (`READ_TEXT` non è RFC) |
+| Unità | `ST` per i pezzi, senza conversione ISO completa | tabella `T006` con conversioni interne/esterne/ISO |
+| SOAP RFC | sessione mantenuta dal cookie `sap-contextid` | il servizio ICF è senza stato per impostazione: il commit va nella stessa chiamata (wrapper) |
+| Messaggi | classi plausibili, numeri inventati | non fare logica sui numeri: solo su `TYPE` e sul testo |

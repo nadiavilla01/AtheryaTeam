@@ -281,9 +281,17 @@ def fiori_act(payload: dict):
         return {"ok": True, "message": msg}
 
 
+# ---------------------------------------------------------------- facciata ECC (RFC, SOAP, GUI)
+
+from .ecc.http import make_router as _ecc_router  # noqa: E402
+
+app.include_router(_ecc_router(W, LOCK))
+
+
 @app.get("/")
 def root():
     return RedirectResponse("/fiori/")
 
 
+app.mount("/sap/bc/gui/sap/its/webgui", StaticFiles(directory=Path(__file__).parent / "ecc" / "webgui", html=True), name="webgui")
 app.mount("/fiori", StaticFiles(directory=Path(__file__).parent / "fiori", html=True), name="fiori")

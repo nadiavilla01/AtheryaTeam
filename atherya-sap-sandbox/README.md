@@ -1,9 +1,15 @@
-# Atherya · sandbox S/4HANA simulata
+# Atherya · sandbox SAP simulata (S/4HANA ed ECC 6.0)
 
 Una fabbrica di articoli in gomma che vive da sola, con un ERP simulato davanti:
-**manutenzione (PM), produzione (PP) e magazzino (EWM/IM)**, esposti con le API OData V2
-di S/4HANA on-premise e con app in stile Fiori. Serve a sviluppare e provare gli agenti di
-Atherya per settimane, senza un SAP vero e senza toccare i dati di un cliente.
+**manutenzione (PM), produzione (PP) e magazzino**. Due facciate sulla stessa fabbrica:
+
+- **S/4HANA on-premise**: API OData V2 e app in stile Fiori (`/fiori/`);
+- **ECC 6.0**: RFC/BAPI (client compatibile pyrfc e SOAP), tabelle del dizionario via RFC_READ_TABLE,
+  interfaccia in stile SAP GUI con i codici transazione (`/sap/bc/gui/sap/its/webgui/`).
+
+Un documento creato da una parte si vede dall'altra. Serve a sviluppare e provare gli agenti di
+Atherya per settimane, sui due mondi SAP che troverà nei clienti, senza un SAP vero e senza
+toccare i dati di un cliente.
 
 Fatture, ordini d'acquisto completi, contabilità e vendite restano fuori: le richieste d'acquisto
 "diventano" consegne dopo il lead time, le spedizioni sono uscite merci 601.
@@ -15,10 +21,12 @@ del cliente. Nessun logo o marchio SAP.
 
 ```bash
 pip install -r requirements.txt
-python -m pytest -q                         # 28 test: 16 del connettore + 12 della sandbox
+python -m pytest -q                         # 43 test: connettore OData, sandbox, facciata ECC
 uvicorn sap_sim.server:app --port 8080
-# http://localhost:8080/fiori/              app Fiori (utente PLANNER) con l'orologio di fabbrica
-# http://localhost:8080/sap/opu/odata/sap/  API OData V2 (utente ATHERYA_TECH / demo)
+# http://localhost:8080/fiori/                        app Fiori (utente PLANNER) con l'orologio di fabbrica
+# http://localhost:8080/sap/opu/odata/sap/            API OData V2 (utente ATHERYA_TECH / demo)
+# http://localhost:8080/sap/bc/gui/sap/its/webgui/    GUI ECC: IW38, COOIS, MD04, SE16N, SM12… (utente PLANNER)
+# RFC: pyrfc_sim.Connection(ashost="http://localhost:8080", client="100", user="ATHERYA_RFC", passwd="demo")
 python demo.py --url http://localhost:8080  # il demo in tre atti, mentre guardi le app
 ```
 
@@ -100,6 +108,20 @@ Azioni da utente umano, con le stesse regole delle API: creare l'ordine da un av
 un avviso, rilasciare e chiudere ordini, convertire un ordine pianificato, rilasciare un ordine di
 produzione, cambiare pressa (solo tra le presse idonee per lo stampo), confermare un compito di magazzino.
 
+## Facciata ECC 6.0
+
+Stessa fabbrica, dialetto ECC. Per le persone, la GUI con i codici transazione:
+
+| Area | Transazioni |
+|---|---|
+| Manutenzione | IW21 crea avviso · IW28 avvisi · IW23 avviso · IW38 ordini PM · IW33 ordine (rilascio, chiusura, blocco) · IK17 misure · IH08 apparecchiature · IP16 piani |
+| Produzione | COOIS ordini · CO03 ordine (rilascio, cambio pressa) · MD16 ordini pianificati (conversione) · MD04 fabbisogni/stock · CM01 carico presse · COGI |
+| Magazzino | MMBE · MB52 · MB51 · MB25 prenotazioni · ME5A RdA · LX02 quanti WM · LT23 ordini di trasferimento (conferma) |
+| Strumenti | SE16N qualsiasi tabella · SM12 blocchi · SM04 sessioni RFC e unità di lavoro aperte |
+
+Come nella GUI vera, le chiavi si vedono senza zeri (4000101) mentre RFC e tabelle le hanno con gli
+zeri (000004000101), e la schermata non si aggiorna da sola. Per Atherya: **CONNECT_ECC.md**.
+
 ## Struttura
 
 ```
@@ -115,8 +137,11 @@ sap_sim/
   server.py       FastAPI: OData, comandi della simulazione, dati per le app
   fiori_apps.py   descrizione delle app (colonne, stati, azioni)
   fiori/          interfaccia OpenUI5, tema Horizon
-atherya_sap/      il connettore di Atherya (azioni tipizzate, policy, saga, audit)
+  ecc/            facciata ECC 6.0: conv (ALPHA, date, stati), tables (45 tabelle), rfc (32 moduli funzione,
+                  unità logica di lavoro, blocchi, S_RFC), http (SOAP, trasporto RFC), gui + webgui/ (SAP GUI)
+pyrfc_sim/        client RFC con la stessa interfaccia di pyrfc
+atherya_sap/      il connettore di Atherya (azioni tipizzate, policy, saga, audit); ecc.py = stesso connettore su BAPI
 tests/            test del connettore e della sandbox
 ```
 
-Per collegare Atherya: **CONNECT.md**. Per i nomi da verificare prima del SAP vero: **FIELD_MAP.md**.
+Per collegare Atherya: **CONNECT.md** (S/4HANA, OData) e **CONNECT_ECC.md** (ECC, RFC/BAPI). Per i nomi da verificare prima del SAP vero: **FIELD_MAP.md**.

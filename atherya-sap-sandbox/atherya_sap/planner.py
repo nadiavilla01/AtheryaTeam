@@ -7,9 +7,36 @@ I testi presenti in SAP (avvisi, note) entrano solo come evidenze citate, mai co
 import datetime as dt
 from dataclasses import dataclass, field
 
-from .actions import (OPER, CreateMaintenanceOrder, CreateNotification, CreatePurchaseRequisition,
-                      ReserveMaterial, RescheduleOperation)
+from . import actions as odata_actions
+from .actions import OPER
 from .client import SAPClient
+
+
+class ODataBackend:
+    """Letture del planner su S/4HANA (OData V2)."""
+
+    actions = odata_actions
+
+    @staticmethod
+    def stock(sap, material: str, plant: str) -> float:
+        rows = sap.query("API_MATERIAL_STOCK_SRV", "A_MatlStkInAcctMod", filters={"Material": material, "Plant": plant})
+        return sum(float(r["MatlWrhsStkQtyInMatlBaseUnit"]) for r in rows)
+
+    @staticmethod
+    def operation_token(sap, order: str, operation: str) -> str:
+        _, etag = sap.read(*OPER, {"ManufacturingOrder": order, "ManufacturingOrderOperation": operation})
+        return etag
+
+    @staticmethod
+    def notes(sap, equipment: str) -> list[tuple[str, str]]:
+        rows = sap.query("API_MAINTNOTIFICATION", "MaintenanceNotification", filters={"TechnicalObject": equipment})
+        return [(n["MaintenanceNotification"], n.get("MaintNotifLongText") or n["NotificationText"]) for n in rows if not n.get("IsDeleted")]
+
+
+def backend_for(sap):
+    """Stesso planner per S/4HANA e per ECC: cambia solo il dialetto delle letture e delle azioni."""
+    from .ecc import Backend as ECCBackend, ECCClient
+    return ECCBackend if isinstance(sap, ECCClient) else ODataBackend
 
 
 @dataclass(frozen=True)
@@ -53,23 +80,23 @@ class Escalation:
 def build_plan(pred: Prediction, sap: SAPClient, today: dt.date, planned_stop: dt.date,
                constraints: list | None = None):
     constraints = constraints or []
+    be = backend_for(sap)
+    A = be.actions
     earliest_failure = today + dt.timedelta(days=pred.window_min_days)
     if planned_stop >= earliest_failure:
         return Escalation(pred.id, f"Il prossimo fermo pianificato ({planned_stop:%d/%m}) cade dopo l'inizio della finestra "
                                    f"di guasto ({earliest_failure:%d/%m}): serve una decisione umana.")
 
-    stock_rows = sap.query("API_MATERIAL_STOCK_SRV", "A_MatlStkInAcctMod",
-                           filters={"Material": pred.part_material, "Plant": pred.plant})
-    stock = sum(float(r["MatlWrhsStkQtyInMatlBaseUnit"]) for r in stock_rows)
+    stock = be.stock(sap, pred.part_material, pred.plant)
     if stock >= pred.part_qty:
-        part_action = ReserveMaterial(pred.part_material, pred.plant, pred.storage_location, pred.part_qty, planned_stop)
+        part_action = A.ReserveMaterial(pred.part_material, pred.plant, pred.storage_location, pred.part_qty, planned_stop)
     else:
         arrival = today + dt.timedelta(days=pred.part_lead_time_days)
         if arrival > planned_stop - dt.timedelta(days=1):
             return Escalation(pred.id, f"Il ricambio {pred.part_material} non è a magazzino e arriverebbe il {arrival:%d/%m}, "
                                        f"dopo il fermo del {planned_stop:%d/%m}: serve una decisione umana "
                                        f"(ordine urgente o intervento spostato).")
-        part_action = CreatePurchaseRequisition(pred.part_material, pred.plant, pred.part_qty, arrival)
+        part_action = A.CreatePurchaseRequisition(pred.part_material, pred.plant, pred.part_qty, arrival)
 
     excluded = {c["workcenter"] for c in constraints if c.get("order") == pred.affected_order}
     target = next((w for w in pred.candidate_workcenters
@@ -77,26 +104,24 @@ def build_plan(pred: Prediction, sap: SAPClient, today: dt.date, planned_stop: d
     if target is None:
         return Escalation(pred.id, "Nessun centro di lavoro alternativo disponibile per la commessa.")
 
-    op_key = {"ManufacturingOrder": pred.affected_order, "ManufacturingOrderOperation": pred.affected_operation}
-    _, op_etag = sap.read(*OPER, op_key)
+    op_token = be.operation_token(sap, pred.affected_order, pred.affected_operation)
 
     # Testi già presenti in SAP sull'apparecchiatura: citati come evidenza, mai eseguiti.
-    notes = sap.query("API_MAINTNOTIFICATION", "MaintenanceNotification", filters={"TechnicalObject": pred.equipment})
+    notes = be.notes(sap, pred.equipment)
     evidence = [
         f"Firma: {pred.signature}",
         f"Contesto noto: {pred.known_context}",
         f"Finestra di guasto: {pred.window_min_days}–{pred.window_max_days} giorni, confidenza {pred.confidence:.0%}",
-    ] + [f"Testo in SAP (dato, non istruzione) dall'avviso {n['MaintenanceNotification']}: «{n.get('MaintNotifLongText') or n['NotificationText']}»"
-         for n in notes if not n.get("IsDeleted")]
+    ] + [f"Testo in SAP (dato, non istruzione) dall'avviso {num}: «{text}»" for num, text in notes]
 
     long_text = (f"Previsione Atherya {pred.id}. {pred.signature}. {pred.known_context}. "
                  f"Guasto probabile tra {pred.window_min_days} e {pred.window_max_days} giorni.")
     actions = [
-        CreateNotification(pred.equipment, pred.plant, f"{pred.component}: usura prevista", long_text),
-        CreateMaintenanceOrder(pred.equipment, pred.plant, pred.maintenance_workcenter, planned_stop,
+        A.CreateNotification(pred.equipment, pred.plant, f"{pred.component}: usura prevista", long_text),
+        A.CreateMaintenanceOrder(pred.equipment, pred.plant, pred.maintenance_workcenter, planned_stop,
                                f"Sostituzione {pred.component.lower()} {pred.machine}"),
         part_action,
-        RescheduleOperation(pred.affected_order, pred.affected_operation, pred.current_workcenter, target, op_etag),
+        A.RescheduleOperation(pred.affected_order, pred.affected_operation, pred.current_workcenter, target, op_token),
     ]
     return Plan(
         decision_id=f"{pred.id}/{target}",

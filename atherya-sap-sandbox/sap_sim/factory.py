@@ -231,6 +231,31 @@ def _hourly(w) -> None:
                     w.event("Magazzino", f"Compito {key[0]} non eseguibile: {e.message}", key[0])
     _corrective_orders(w)
     _move_work_from_stopped_presses(w)
+    _user_locks(w)
+
+
+def _user_locks(w) -> None:
+    """Persone che hanno un documento aperto in modifica (IW32, CO02): blocchi enqueue visibili in SM12.
+
+    Contano solo per la facciata ECC (RFC): un BAPI su un oggetto bloccato fallisce come nel sistema vero.
+    Usa un generatore casuale separato, così la storia della fabbrica non cambia.
+    """
+    for key in [k for k, l in w.locks.items() if l.get("until") and l["until"] <= w.now]:
+        del w.locks[key]
+    if not is_working(w.now):
+        return
+    r = w.lock_rng
+    prod = sorted(k[0] for k, o in w.t("prodorder").items() if o["OrderSystemStatus"] in ("CRTD", "REL", "PCNF"))
+    for order in r.sample(prod, min(2, len(prod))):
+        if ("ORDER", order.zfill(12)) not in w.locks:
+            w.locks[("ORDER", order.zfill(12))] = {"user": "PIANIFICATORE", "tcode": "CO02", "since": w.now,
+                                         "until": w.now + dt.timedelta(minutes=r.choice((15, 30, 45)))}
+    maint = sorted(k[0] for k, o in w.t("morder").items() if o["MaintOrdSystemStatus"] in ("CRTD", "REL"))
+    if maint and r.random() < 0.5:
+        order = r.choice(maint)
+        if ("ORDER", order.zfill(12)) not in w.locks:
+            w.locks[("ORDER", order.zfill(12))] = {"user": "MANUTENZIONE", "tcode": "IW32", "since": w.now,
+                                         "until": w.now + dt.timedelta(minutes=r.choice((15, 30)))}
 
 
 def _shift_end(w) -> None:
@@ -275,7 +300,7 @@ def _nightly(w) -> None:
     pm.schedule_plans(w)
     pp.retry_backflush_errors(w)
     for key, o in w.t("morder").items():
-        if (o["MaintOrdSystemStatus"] == "CRTD" and o["MaintenanceOrderType"] == "PM02" and not o.get("IsDeleted")
+        if (o["MaintOrdSystemStatus"] == "CRTD" and o["MaintenanceOrderType"] == "PM02" and not o.get("IsDeleted") and not o.get("_locked")
                 and o["MaintOrdBasicStartDate"] <= w.today + dt.timedelta(days=2)):
             pm.release_order(w, key[0], "MANUTENZIONE")
     pp.run_mrp(w, "BATCH")
@@ -330,6 +355,8 @@ def build_world(start: dt.datetime | None = None, seed: int = 7):
         if t["WarehouseTaskStatus"] == "":
             inv.confirm_task(w, key[0], "MAGAZZINO")
     pp.schedule_all(w)
+    from .ecc.rfc import seed_users as seed_ecc_users
+    seed_ecc_users(w)
     w.log.clear()
     w.events.clear()
     w.event("Simulazione", f"Fabbrica avviata: {len(w.t('prodorder'))} ordini di produzione, {len(w.t('plannedorder'))} ordini pianificati")

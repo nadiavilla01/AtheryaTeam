@@ -4,6 +4,7 @@ Tutte le chiavi delle tabelle sono tuple. I nomi dei campi delle righe sono quel
 SAP (dove noti); i campi che iniziano con "_" sono interni e non escono mai dalle API.
 """
 
+import copy
 import datetime as dt
 import random
 import secrets
@@ -38,6 +39,10 @@ class World:
         self.machines: dict[str, dict] = {}   # verità simulata, invisibile a SAP
         self.running = False                  # orologio in tempo reale
         self.kpi: dict[str, float] = {}
+        # Facciata ECC: unità logica di lavoro aperta (journal) e blocchi enqueue.
+        self.journal: list | None = None
+        self.locks: dict[tuple, dict] = {}
+        self.lock_rng = random.Random(seed * 1000 + 1)  # separato: non altera la storia della fabbrica
 
     # ---------- tabelle ----------
     def t(self, name: str) -> dict:
@@ -54,7 +59,14 @@ class World:
         self.counters[range_name] += 1
         return str(self.counters[range_name])
 
+    def touch(self, table: str, key: tuple) -> None:
+        """Registra lo stato attuale di una riga nell'unità logica di lavoro aperta (per il rollback)."""
+        if self.journal is not None:
+            row = self.t(table).get(key)
+            self.journal.append(("row", table, key, copy.deepcopy(row) if row is not None else None))
+
     def insert(self, table: str, key: tuple, row: dict, user: str, quiet: bool = False) -> dict:
+        self.touch(table, key)
         if key in self.t(table):
             raise BusinessError("SIM/DUP", f"Documento {'/'.join(key)} già esistente")
         row.update({"_etag": new_etag(), "_by": user, "_at": self.now, "_changed_by": user})
@@ -65,6 +77,7 @@ class World:
 
     def update(self, table: str, key: tuple, changes: dict, user: str, quiet: bool = False) -> dict:
         row = self.get(table, key)
+        self.touch(table, key)
         row.update(changes)
         row["_etag"] = new_etag()
         row["_changed_by"] = user
@@ -74,6 +87,7 @@ class World:
 
     def delete(self, table: str, key: tuple, user: str, quiet: bool = False) -> None:
         self.get(table, key)
+        self.touch(table, key)
         del self.t(table)[key]
         if not quiet:
             self.audit("delete", table, key, user)
@@ -86,6 +100,8 @@ class World:
             "Document": "/".join(key), "CreatedByUser": user,
             "Changes": ", ".join(f"{k} = {v}" for k, v in shown.items())[:300],
         })
+        if self.journal is not None:
+            self.journal.append(("log", self.log[-1]))
         if len(self.log) > 30000:
             del self.log[:5000]
 
@@ -94,6 +110,19 @@ class World:
         self.events.append({"Id": str(len(self.events) + 1), "ts": self.now, "Area": area, "Text": text, "Ref": ref})
         if len(self.events) > 10000:
             del self.events[:2000]
+
+    def rollback(self, journal: list) -> None:
+        """Annulla le modifiche registrate, dall'ultima alla prima (BAPI_TRANSACTION_ROLLBACK)."""
+        for entry in reversed(journal):
+            if entry[0] == "log":
+                if entry[1] in self.log:
+                    self.log.remove(entry[1])
+                continue
+            _, table, key, old = entry
+            if old is None:
+                self.t(table).pop(key, None)
+            else:
+                self.t(table)[key] = old
 
     # ---------- tempo ----------
     @property

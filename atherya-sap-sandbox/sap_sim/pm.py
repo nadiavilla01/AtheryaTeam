@@ -149,6 +149,8 @@ def release_order(w, num: str, user: str) -> None:
     o = w.get("morder", (num,))
     if o.get("IsDeleted"):
         raise BusinessError("IW/DEL", "Ordine contrassegnato per la cancellazione: rilascio impossibile")
+    if o.get("_locked"):
+        raise BusinessError("IW/LKD", f"Ordine {num} bloccato (LKD): rilascio impossibile")
     if o["MaintOrdSystemStatus"] != "CRTD":
         raise BusinessError("IW/025", f"Ordine {num} non in stato Creato")
     w.update("morder", (num,), {"MaintOrdSystemStatus": "REL", "MaintOrdReleaseDate": w.today}, user)
@@ -259,7 +261,7 @@ def _withdraw_spare(w, order: dict, mat: str, qty: float, user: str) -> bool:
 
 def try_start(w, num: str, user: str = "MANUTENTORE") -> bool:
     o = w.get("morder", (num,))
-    if o["MaintOrdSystemStatus"] != "REL" or o.get("_exec") or o.get("IsDeleted"):
+    if o["MaintOrdSystemStatus"] != "REL" or o.get("_exec") or o.get("IsDeleted") or o.get("_locked"):
         return False
     spare = required_spare(w, o)
     needs = [(c["Material"], c["RequiredQuantity"] - c["WithdrawnQuantity"]) for c in o["to_MaintenanceOrderComponent"]["results"]
